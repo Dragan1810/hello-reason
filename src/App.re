@@ -1,21 +1,104 @@
-[%bs.raw {|require('./App.css')|}];
+type todo = {
+  id: int,
+  text: string,
+  completed: bool,
+};
 
-[@bs.module] external logo : string = "./logo.svg";
+type state = {todos: list(todo)};
 
-let component = ReasonReact.statelessComponent("App");
+type action =
+  | Add(string)
+  | Check(int)
+  | Delete(int);
 
-let make = (~message, _children) => {
+let toString = ReasonReact.string;
+
+let todoId = ref(0);
+
+let newTodo = text => {
+  todoId := todoId^ + 1;
+  {id: todoId^, completed: false, text};
+};
+
+let check = (id, todos) =>
+  List.map(t => t.id === id ? {...t, completed: ! t.completed} : t, todos);
+
+let delete = (id, todos) => List.filter(t => t.id !== id, todos);
+
+let valueFromEvent = e : string => (
+                                     e
+                                     |> ReactEventRe.Form.target
+                                     |> ReactDOMRe.domElementToObj
+                                   )##value;
+
+module Input = {
+  type state = string;
+
+  let component = ReasonReact.reducerComponent("Input");
+
+  let make = (~onSubmit, _children) => {
+    ...component,
+    initalState: () => "",
+    reducer: (newTodo, _) => ReasonReact.Update(newTodo),
+    render: ({state: todo, reduce}) =>
+      <input
+        className="input"
+        value=todo
+        _type="text"
+        placeholder="what do you want?"
+        onChange=(reduce(e => valueFromEvent(e)))
+        onKeyDown=(
+          e =>
+            if (ReactEventRe.Keyboard.key(e) == "Enter") {
+              onSubmit(todo);
+              (reduce(() => ""))();
+            }
+        )
+      />,
+  };
+};
+
+module TodoItem = {
+  let component = ReasonReact.statelessComponent("TodoItem");
+
+  let make = (~todo: todo, ~onToggle, ~clickDelete, _children) => {
+    ...component,
+    render: _self =>
+      <div onClick=(_e => onToggle())>
+        <input
+          _type="checkbox"
+          checked=(Js.Boolean.to_js_boolean(todo.completed))
+        />
+        <label> (toString(todo.text)) </label>
+        <input _type="button" value="x" onClick=(_e => clickDelete()) />
+      </div>,
+  };
+};
+
+let component = ReasonReact.reducerComponent("App");
+
+let make = (_state, _children) => {
   ...component,
-  render: _self =>
-    <div className="App">
-      <div className="App-header">
-        <img src=logo className="App-logo" alt="logo" />
-        <h2> (ReasonReact.string(message)) </h2>
+  initalState: () => {todos: []},
+  reducer: (action, {todos}) =>
+    switch (action) {
+    | Add(text) => ReasonReact.Update({todos: [newTodo(text), ...todos]})
+    | Check(id) => ReasonReact.Update({todos: check(id, todos)})
+    | Delte(id) => ReasonReact.Update({todos: delete(id, todos)})
+    },
+  render: (_self, {state: {todos}, reduce}) =>
+    <div>
+      <h3> (toString("Todo App")) </h3>
+      <Input onSumbit=(reduce(todo => Add(todo))) />
+      <div>(List.map(todo => <TodoItem
+        key=(string_of_int(todo.id))
+        todo
+        onToggle=(reduce() => Check(todo.id)))
+        clickDelete=(reduce() => Delete(todo.id))
+      />, todos)
+      |> Array.of_list
+      |> ReasonReact.arrayToElement
+      )
       </div>
-      <p className="App-intro">
-        (ReasonReact.string("To get started, edit stuff"))
-        <code> (ReasonReact.string(" src/App.re ")) </code>
-        (ReasonReact.string("and save to reload."))
-      </p>
     </div>,
 };
